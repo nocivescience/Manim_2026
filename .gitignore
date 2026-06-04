@@ -1,0 +1,9 @@
+*.mp4
+*.log
+*.txt
+*.mp4
+*.div
+*.pyc
+media
+manim_env
+__pycache__
