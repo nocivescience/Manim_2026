@@ -1,46 +1,72 @@
 from manim import *
+import numpy as np
+
 class RectaNumerica(Scene):
     def construct(self):
+        # 1. El ValueTracker principal
         track = ValueTracker(0)
-        track_1 = track.get_value()
-        track_2 = np.sin(track.get_value())*11
-        track_3 = np.cos(track.get_value())*5
-        tracks = [track_1, track_2, track_3]
-        recta_1 = self.recta_tipo(-10, 10, PI/7).move_to(3*LEFT+2*UP)
-        recta_2 = self.recta_tipo(-12,12, 0).move_to(2*DOWN)
-        recta_3 = self.recta_tipo(-8,8).move_to(3*RIGHT+ 2*UP)
-        rects= Group(recta_1, recta_2, recta_3)
-        vector_1 = self.set_vectores(rects, tracks)
-        self.play(Create(recta_1), Create(recta_2), Create(recta_3), DrawBorderThenFill(vector_1))
-        self.play(track.animate.set_value(2))
+
+        # 2. Creamos las rectas
+        recta_1 = self.recta_tipo(-10, 10, PI/7).move_to(3*LEFT + 2*UP)
+        recta_2 = self.recta_tipo(-12, 12, 0).move_to(2*DOWN)
+        recta_3 = self.recta_tipo(-8, 8).move_to(3*RIGHT + 2*UP)
+        
+        # 3. Definimos las funciones matemáticas dinámicas para cada recta
+        # Pasamos lambdas que leen el tracker en tiempo real
+        funciones = [
+            lambda: track.get_value(),
+            lambda: np.sin(track.get_value()) * 11,
+            lambda: np.cos(track.get_value()) * 5
+        ]
+        
+        rects = [recta_1, recta_2, recta_3]
+        
+        # 4. Construimos los vectores usando always_redraw
+        vectores = self.set_vectores(rects, funciones)
+
+        # Animación
+        self.play(
+            Create(recta_1), 
+            Create(recta_2), 
+            Create(recta_3), 
+            FadeIn(vectores) # Usamos FadeIn ya que always_redraw maneja la creación continua
+        )
+        self.wait(1)
+        
+        # Al mover el track, las funciones se recalculan solas y las flechas se redibujan en su sitio
+        self.play(track.animate.set_value(2), run_time=4)
         self.wait()
-    def recta_tipo(self, x_min, x_max,rot=-PI/8):
+
+    def recta_tipo(self, x_min, x_max, rot=-PI/8):
         recta = NumberLine(
-            x_range= [x_min, x_max, 2],
+            x_range=[x_min, x_max, 2],
             tick_size=0.1,
-            length = 4,
+            length=4,
             include_numbers=True,
-            include_tip= True,
-            font_size= 13,
+            include_tip=True,
+            font_size=13,
             stroke_width=1,
-            unit_size=.1,
-            rotation= rot,
+            rotation=rot,
         )
         return recta
-    def set_vectores(self, rects, tracks):
+
+    def set_vectores(self, rects, funciones):
         vectores = VGroup()
-        for rect, track in zip(rects, tracks):
-            vector = Arrow(
-                stroke_width=.8,
-                max_stroke_width_to_length_ratio=.1,
-                max_tip_length_to_length_ratio=.1,
+        
+        # Usamos un bucle para añadir cada vector individualmente con su comportamiento
+        for rect, func in zip(rects, funciones):
+            # 'always_redraw' recrea la flecha en cada frame basándose en la posición actual
+            vector_dinamico = always_redraw(
+                lambda r=rect, f=func: Arrow(
+                    start=r.n2p(f()) + UP * 0.5, # Un poco arriba de la recta elegida
+                    end=r.n2p(f()),             # Apuntando directo al número exacto
+                    stroke_width=1.2,
+                    max_stroke_width_to_length_ratio=1,
+                    max_tip_length_to_length_ratio=0.3,
+                    buff=0,
+                    color=YELLOW
+                )
             )
-            vector.rotate(-PI/2)
-            vector.move_to(
-                rect.n2p(track), vector.get_end()
-            )
-            vector.add_updater(
-                lambda t: vector.move_to(rect.n2p(track))
-            )
-            vectores.add(vector)
-        return(vectores)
+            vectores.add(vector_dinamico)
+            
+        return vectores
