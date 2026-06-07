@@ -10,7 +10,7 @@ class Windmill(Scene):
         },
         'dot_config': {
             'fill_color': RED,
-            'radius': 0.08, # Un poco más grande para que se vea bien
+            'radius': 0.08,
         },
         'windmill_speed': .25,
         'leave_shadow': False,
@@ -42,27 +42,36 @@ class Windmill(Scene):
         return pivot_dot
         
     def get_dots(self, points):
-        # << CORREGIDO: Simplificado temporalmente para evitar errores con Integer
-        return VGroup(*[Dot(p, **self.dicc['dot_config']) for p in points])
+        # << CORREGIDO: Los números ya no se meten dentro del dot.add()
+        # Se añaden de manera independiente al VGroup para evitar conflictos de renderizado
+        grupo = VGroup()
+        self.lista_dots = [] # Guardamos una lista plana para buscar las colisiones fácilmente
+        
+        for point in points:
+            dot = Dot(point, **self.dicc['dot_config'])
+            numero = self.entero(dot, 0)
+            dot.numero = numero
+            
+            grupo.add(dot)
+            grupo.add(numero)
+            self.lista_dots.append(dot)
+            
+        return grupo
 
     def next_pivot_and_angle(self, windmill):
         curr_angle = windmill.get_angle()
         pivot = windmill.pivot
         points = windmill.point_set
         
-        # << CORREGIDO: Cálculo de ángulos vectoriales consistentes respecto al pivote
         angles = np.array([
             -(angle_of_vector(p - pivot) - curr_angle) % PI 
             for p in points
         ])
         
-        # Para evitar que el propio pivote sea elegido (su ángulo sería 0 o muy cercano)
-        # le asignamos un ángulo falso muy grande (como PI)
         for i, p in enumerate(points):
             if np.allclose(p, pivot):
                 angles[i] = PI
                 
-        # Tolerancia para evitar que el molino se quede atascado en el mismo punto recién tocado
         tiny_indices = angles < 0.0001
         angles[tiny_indices] = PI
         
@@ -89,13 +98,28 @@ class Windmill(Scene):
             if anim.run_time > run_time:
                 anim.run_time = run_time
                 
+        anims_colision = []
+        if change_pivot_at_end:
+            # << CORREGIDO: Buscamos en nuestra lista plana de puntos
+            for dot in self.lista_dots:
+                if np.allclose(dot.get_center(), new_pivot):
+                    # Calculamos el nuevo valor PRIMERO antes de pasarlo a la animación
+                    valor_actual = dot.numero.get_value()
+                    nuevo_valor = valor_actual + 1
+                    
+                    # Generamos la animación con el orden correcto de parámetros
+                    anim_numero = ChangeDecimalToValue(dot.numero, nuevo_valor, run_time=0.05)
+                    anims_colision.append(anim_numero)
+                    break
+
         self.play(
-            Rotate(windmill, -angle, run_time=run_time, rate_func=rate_func), *added_anims
+            Rotate(windmill, -angle, run_time=run_time, rate_func=rate_func), 
+            *added_anims, 
+            *anims_colision
         )
         
         if change_pivot_at_end:
             self.handle_pivot_change(windmill, new_pivot)
-            # << CORREGIDO: Pasamos "new_pivot" (las coordenadas) al destello, no el objeto windmill
             return [self.get_hit_flash(new_pivot)], run_time
             
         return [], run_time
@@ -112,9 +136,14 @@ class Windmill(Scene):
             time -= last_run_time
 
     def get_hit_flash(self, point): 
-        # << CORREGIDO: Ajustado para que el destello se posicione exactamente sobre el punto de colisión
         flash = Flash(point, line_length=0.1, flash_radius=0.3, color=WHITE, run_time=0.5)
         return flash
+    
+    def entero(self, dot, cero):
+        nota = Integer(cero, font_size=12)
+        # << CORREGIDO: Un updater asegura que el número acompañe al punto dinámicamente
+        nota.add_updater(lambda n: n.next_to(dot.get_center(), UP, buff=0.15))
+        return nota
 
 class IntroduceWindmill(Windmill):
     DICC = {
@@ -132,16 +161,20 @@ class IntroduceWindmill(Windmill):
         
     def add_line(self):
         dots = self.dots
-        points = np.array(list(map(lambda d: d.get_center(), dots))) 
+        points = np.array(list(map(lambda d: d.get_center(), self.lista_dots))) 
         windmill = self.get_windmill(points, pivot=points[0], angle=TAU/6)
         
         p0 = points[0]
         pivot_dot = self.get_pivot_dot(windmill)
         
-        # Agregamos los puntos primero para que la línea pase sobre/bajo ellos de forma fluida
         self.add(dots)
         self.play(Create(windmill), Create(pivot_dot))
         
+        # El primer pivote arranca marcando 1 al iniciar el movimiento
+        for dot in self.lista_dots:
+            if np.allclose(dot.get_center(), p0):
+                dot.numero.set_value(1)
+
         next_pivot, angle = self.next_pivot_and_angle(windmill)
         self.play(Rotate(windmill, -angle * 0.99, about_point=p0, rate_func=linear))
         
@@ -154,5 +187,5 @@ class IntroduceWindmill(Windmill):
         pivot_dot = self.pivot_dot
         
         self.add(windmill.copy().fade(.75), pivot_dot.copy().fade(.75))
-        windmill.rot_speed *= 2.5 # Aceleramos un poco para la demostración continua
+        windmill.rot_speed *= 2.5 
         self.let_windmill_run(windmill, self.DICC['final_run_time'])
